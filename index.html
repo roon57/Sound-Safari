@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#fff7f0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Sound Safari" />
+  <title>Sound Safari 🎵</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #fff7f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    #game {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 20px 16px 32px;
+      text-align: center;
+    }
+
+    h1 { font-size: 28px; font-weight: 700; color: #2d2d2d; margin-bottom: 4px; }
+    .subtitle { font-size: 16px; color: #777; margin-bottom: 20px; }
+
+    #score-bar {
+      display: flex; gap: 16px; margin-bottom: 20px;
+    }
+    .score-card {
+      background: #fff; border-radius: 14px;
+      padding: 10px 22px; box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      min-width: 90px;
+    }
+    .score-label { font-size: 12px; color: #999; }
+    .score-val { font-size: 24px; font-weight: 700; color: #333; }
+
+    #message {
+      font-size: 26px; font-weight: 600;
+      min-height: 44px; margin-bottom: 18px;
+      color: #333; transition: opacity 0.25s;
+    }
+
+    #pads {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 22px;
+    }
+
+    .pad {
+      border-radius: 22px; height: 130px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; border: none;
+      transition: transform 0.1s, filter 0.1s;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    }
+    .pad:disabled { opacity: 0.55; }
+    .pad:active:not(:disabled), .pad.lit { transform: scale(0.93); filter: brightness(1.12); }
+    .pad .icon { font-size: 50px; line-height: 1; }
+    .pad .name { font-size: 17px; font-weight: 600; margin-top: 6px; }
+
+    #pad-0 { background: #ffc1cc; }
+    #pad-0 .name { color: #7a3040; }
+    #pad-1 { background: #b5d4f4; }
+    #pad-1 .name { color: #1a5f9e; }
+    #pad-2 { background: #c0dd97; }
+    #pad-2 .name { color: #3b6d11; }
+    #pad-3 { background: #ffd59e; }
+    #pad-3 .name { color: #7a4800; }
+
+    .big-btn {
+      font-size: 20px; font-weight: 600;
+      padding: 14px 42px; border-radius: 50px;
+      border: none; cursor: pointer;
+      background: #ff8c61; color: #fff;
+      box-shadow: 0 4px 14px rgba(255,140,97,0.35);
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .big-btn:active { transform: scale(0.96); box-shadow: 0 2px 8px rgba(255,140,97,0.3); }
+
+    #install-banner {
+      display: none;
+      margin-top: 18px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 18px;
+      font-size: 14px;
+      color: #555;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+      max-width: 340px;
+      width: 100%;
+    }
+    #install-banner button {
+      margin-top: 8px;
+      background: #ff8c61; color: #fff;
+      border: none; border-radius: 20px;
+      padding: 8px 20px; font-size: 14px;
+      cursor: pointer; font-weight: 600;
+    }
+
+    #ios-hint {
+      display: none;
+      margin-top: 14px;
+      font-size: 13px; color: #888;
+      max-width: 280px;
+    }
+  </style>
+</head>
+<body>
+<div id="game">
+  <h1>🎵 Sound Safari!</h1>
+  <p class="subtitle">Listen, then tap the right animal!</p>
+
+  <div id="score-bar">
+    <div class="score-card"><div class="score-label">⭐ Stars</div><div class="score-val" id="stars">0</div></div>
+    <div class="score-card"><div class="score-label">🎯 Round</div><div class="score-val" id="round-disp">1/5</div></div>
+  </div>
+
+  <div id="message">🎧 Press Start!</div>
+
+  <div id="pads">
+    <button class="pad" id="pad-0" onclick="guess(0)" disabled>
+      <span class="icon">🐸</span><span class="name">Frog</span>
+    </button>
+    <button class="pad" id="pad-1" onclick="guess(1)" disabled>
+      <span class="icon">🐦</span><span class="name">Bird</span>
+    </button>
+    <button class="pad" id="pad-2" onclick="guess(2)" disabled>
+      <span class="icon">🐝</span><span class="name">Bee</span>
+    </button>
+    <button class="pad" id="pad-3" onclick="guess(3)" disabled>
+      <span class="icon">🐱</span><span class="name">Cat</span>
+    </button>
+  </div>
+
+  <button class="big-btn" id="start-btn" onclick="startGame()">▶ Start!</button>
+  <button class="big-btn" id="replay-btn" onclick="startGame()" style="display:none;">🔄 Play Again!</button>
+
+  <div id="install-banner">
+    📲 Install Sound Safari on your home screen for easy access!
+    <br>
+    <button id="install-btn">Install App</button>
+  </div>
+
+  <p id="ios-hint">📲 To install: tap <strong>Share</strong> → <strong>Add to Home Screen</strong></p>
+</div>
+
+<script>
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let actx = null;
+function getCtx() { if (!actx) actx = new AudioCtx(); return actx; }
+
+function playFrog() {
+  const ctx = getCtx(), t = ctx.currentTime;
+  for (let i = 0; i < 3; i++) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(300, t+i*0.25);
+    o.frequency.linearRampToValueAtTime(190, t+i*0.25+0.12);
+    g.gain.setValueAtTime(0.4, t+i*0.25);
+    g.gain.linearRampToValueAtTime(0, t+i*0.25+0.15);
+    o.start(t+i*0.25); o.stop(t+i*0.25+0.2);
+  }
+}
+function playBird() {
+  const ctx = getCtx(), t = ctx.currentTime;
+  for (let i = 0; i < 4; i++) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(1200 + Math.random()*400, t+i*0.18);
+    o.frequency.linearRampToValueAtTime(1600 + Math.random()*200, t+i*0.18+0.1);
+    g.gain.setValueAtTime(0.3, t+i*0.18);
+    g.gain.linearRampToValueAtTime(0, t+i*0.18+0.13);
+    o.start(t+i*0.18); o.stop(t+i*0.18+0.15);
+  }
+}
+function playBee() {
+  const ctx = getCtx(), o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sawtooth'; o.frequency.value = 200;
+  o.connect(g); g.connect(ctx.destination);
+  g.gain.setValueAtTime(0, ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0.2, ctx.currentTime+0.05);
+  g.gain.setValueAtTime(0.2, ctx.currentTime+0.55);
+  g.gain.linearRampToValueAtTime(0, ctx.currentTime+0.7);
+  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.75);
+}
+function playCat() {
+  const ctx = getCtx(), o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sine'; o.connect(g); g.connect(ctx.destination);
+  o.frequency.setValueAtTime(600, ctx.currentTime);
+  o.frequency.linearRampToValueAtTime(900, ctx.currentTime+0.25);
+  o.frequency.linearRampToValueAtTime(700, ctx.currentTime+0.55);
+  g.gain.setValueAtTime(0, ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0.35, ctx.currentTime+0.05);
+  g.gain.setValueAtTime(0.35, ctx.currentTime+0.45);
+  g.gain.linearRampToValueAtTime(0, ctx.currentTime+0.6);
+  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.65);
+}
+
+const sounds = [
+  { name: "Frog", play: playFrog },
+  { name: "Bird", play: playBird },
+  { name: "Bee",  play: playBee  },
+  { name: "Cat",  play: playCat  }
+];
+
+let total = 5, round = 0, stars = 0, current = -1, busy = false;
+
+function setPads(on) {
+  for (let i = 0; i < 4; i++) {
+    const p = document.getElementById('pad-'+i);
+    p.disabled = !on;
+  }
+}
+function flashPad(idx) {
+  const p = document.getElementById('pad-'+idx);
+  p.classList.add('lit');
+  setTimeout(() => p.classList.remove('lit'), 300);
+}
+function setMsg(t) { document.getElementById('message').textContent = t; }
+
+function startGame() {
+  round = 0; stars = 0;
+  document.getElementById('stars').textContent = '0';
+  document.getElementById('start-btn').style.display = 'none';
+  document.getElementById('replay-btn').style.display = 'none';
+  nextRound();
+}
+
+function nextRound() {
+  if (round >= total) { endGame(); return; }
+  setPads(false);
+  current = Math.floor(Math.random() * 4);
+  document.getElementById('round-disp').textContent = (round+1)+'/'+total;
+  setMsg('🔊 Listen...');
+  setTimeout(() => {
+    flashPad(current);
+    sounds[current].play();
+    setTimeout(() => { setMsg('👆 Which animal?'); setPads(true); }, 900);
+  }, 500);
+}
+
+function guess(idx) {
+  if (busy) return;
+  busy = true; setPads(false);
+  flashPad(idx); sounds[idx].play();
+  if (idx === current) {
+    stars++;
+    document.getElementById('stars').textContent = stars;
+    setMsg('🌟 Yes! Great job!');
+  } else {
+    setMsg('💙 Almost! Listen again!');
+    setTimeout(() => { flashPad(current); sounds[current].play(); }, 250);
+  }
+  round++;
+  setTimeout(() => { busy = false; nextRound(); }, 1500);
+}
+
+function endGame() {
+  setPads(false);
+  const msgs = ['🎉 Amazing!','🌈 Superstar!','🏆 Wonderful!'];
+  setMsg(msgs[Math.floor(Math.random()*msgs.length)] + ' ' + stars + '/'+total+' stars!');
+  document.getElementById('replay-btn').style.display = 'inline-block';
+}
+
+// PWA install
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-banner').style.display = 'block';
+});
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') document.getElementById('install-banner').style.display = 'none';
+  deferredPrompt = null;
+});
+
+// iOS hint
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone;
+if (isIOS) document.getElementById('ios-hint').style.display = 'block';
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
