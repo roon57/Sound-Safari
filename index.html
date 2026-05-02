@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#fff7f0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Sound Safari" />
+  <title>Sound Safari 🎵</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #fff7f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #game {
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 20px 16px 32px; text-align: center;
+    }
+    h1 { font-size: 28px; font-weight: 700; color: #2d2d2d; margin-bottom: 4px; }
+    .subtitle { font-size: 16px; color: #777; margin-bottom: 20px; }
+    #score-bar { display: flex; gap: 16px; margin-bottom: 20px; }
+    .score-card {
+      background: #fff; border-radius: 14px;
+      padding: 10px 22px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); min-width: 90px;
+    }
+    .score-label { font-size: 12px; color: #999; }
+    .score-val { font-size: 24px; font-weight: 700; color: #333; }
+    #message { font-size: 26px; font-weight: 600; min-height: 44px; margin-bottom: 18px; color: #333; }
+    #pads {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 14px; width: 100%; max-width: 400px; margin-bottom: 22px;
+    }
+    .pad {
+      border-radius: 22px; height: 120px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; border: none;
+      transition: transform 0.1s, filter 0.1s;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    }
+    .pad:disabled { opacity: 0.55; cursor: default; }
+    .pad.lit { transform: scale(0.93); filter: brightness(1.15); }
+    .pad .icon { font-size: 46px; line-height: 1; }
+    .pad .name { font-size: 16px; font-weight: 600; margin-top: 6px; }
+    .big-btn {
+      font-size: 20px; font-weight: 600; padding: 14px 42px; border-radius: 50px;
+      border: none; cursor: pointer; background: #ff8c61; color: #fff;
+      box-shadow: 0 4px 14px rgba(255,140,97,0.35); transition: transform 0.1s;
+    }
+    .big-btn:active { transform: scale(0.96); }
+    #install-banner {
+      display: none; margin-top: 18px; background: #fff; border-radius: 14px;
+      padding: 12px 18px; font-size: 14px; color: #555;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08); max-width: 340px; width: 100%;
+    }
+    #install-banner button {
+      margin-top: 8px; background: #ff8c61; color: #fff;
+      border: none; border-radius: 20px; padding: 8px 20px;
+      font-size: 14px; cursor: pointer; font-weight: 600;
+    }
+    #ios-hint { display: none; margin-top: 14px; font-size: 13px; color: #888; max-width: 280px; }
+  </style>
+</head>
+<body>
+<div id="game">
+  <h1>🎵 Sound Safari!</h1>
+  <p class="subtitle">Listen, then tap the right animal!</p>
+  <div id="score-bar">
+    <div class="score-card"><div class="score-label">⭐ Stars</div><div class="score-val" id="stars">0</div></div>
+    <div class="score-card"><div class="score-label">🎯 Round</div><div class="score-val" id="round-disp">1/5</div></div>
+  </div>
+  <div id="message">🎧 Press Start!</div>
+  <div id="pads"></div>
+  <button class="big-btn" id="start-btn" onclick="startGame()">▶ Start!</button>
+  <button class="big-btn" id="replay-btn" onclick="startGame()" style="display:none;">🔄 Play Again!</button>
+  <div id="install-banner">
+    📲 Install Sound Safari on your home screen!
+    <br><button id="install-btn">Install App</button>
+  </div>
+  <p id="ios-hint">📲 Tap <strong>Share</strong> → <strong>Add to Home Screen</strong></p>
+</div>
+
+<script>
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let actx = null;
+function C() { if (!actx) actx = new AudioCtx(); return actx; }
+
+// noise buffer helper
+function makeNoise(c, dur) {
+  const sr = c.sampleRate, len = sr * dur;
+  const buf = c.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(); src.buffer = buf; return src;
+}
+
+// vibrato helper
+function addVibrato(osc, c, rate, depth, start) {
+  const lfo = c.createOscillator(), lfoG = c.createGain();
+  lfo.frequency.value = rate; lfoG.gain.value = depth;
+  lfo.connect(lfoG); lfoG.connect(osc.frequency);
+  lfo.start(start); lfo.stop(start + 2);
+}
+
+const ALL_ANIMALS = [
+  // --- FROG: wet croaking ribbit ---
+  {
+    name:"Frog", icon:"🐸", bg:"#c8f0b0", tc:"#2e6600",
+    play() {
+      const c=C(), t=c.currentTime;
+      for (let i=0; i<3; i++) {
+        const o=c.createOscillator(), g=c.createGain();
+        const dist=c.createWaveShaper();
+        const curve=new Float32Array(256);
+        for(let j=0;j<256;j++){const x=j*2/256-1;curve[j]=x*(1+8*Math.abs(x))/(1+8*Math.abs(x)*0.8);}
+        dist.curve=curve;
+        o.type='sawtooth';
+        o.connect(dist); dist.connect(g); g.connect(c.destination);
+        o.frequency.setValueAtTime(180, t+i*0.28);
+        o.frequency.linearRampToValueAtTime(140, t+i*0.28+0.08);
+        o.frequency.linearRampToValueAtTime(180, t+i*0.28+0.16);
+        g.gain.setValueAtTime(0, t+i*0.28);
+        g.gain.linearRampToValueAtTime(0.35, t+i*0.28+0.02);
+        g.gain.linearRampToValueAtTime(0.3, t+i*0.28+0.14);
+        g.gain.linearRampToValueAtTime(0, t+i*0.28+0.2);
+        o.start(t+i*0.28); o.stop(t+i*0.28+0.22);
+      }
+    }
+  },
+  // --- BIRD: chirpy tweet tweet ---
+  {
+    name:"Bird", icon:"🐦", bg:"#b5d4f4", tc:"#1a5f9e",
+    play() {
+      const c=C(), t=c.currentTime;
+      const pattern=[0,0.18,0.36,0.6,0.78];
+      const freqs=[3200,3600,3000,3800,3400];
+      pattern.forEach((dt,i)=>{
+        const o=c.createOscillator(), g=c.createGain();
+        o.type='sine'; o.connect(g); g.connect(c.destination);
+        o.frequency.setValueAtTime(freqs[i]*0.85, t+dt);
+        o.frequency.linearRampToValueAtTime(freqs[i], t+dt+0.06);
+        o.frequency.linearRampToValueAtTime(freqs[i]*0.7, t+dt+0.13);
+        g.gain.setValueAtTime(0, t+dt);
+        g.gain.linearRampToValueAtTime(0.25, t+dt+0.02);
+        g.gain.linearRampToValueAtTime(0.2, t+dt+0.1);
+        g.gain.linearRampToValueAtTime(0, t+dt+0.14);
+        o.start(t+dt); o.stop(t+dt+0.16);
+      });
+    }
+  },
+  // --- BEE: buzzing wings ---
+  {
+    name:"Bee", icon:"🐝", bg:"#ffd59e", tc:"#7a4800",
+    play() {
+      const c=C(), t=c.currentTime;
+      const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+      o.type='sawtooth'; o.frequency.value=220;
+      filter.type='bandpass'; filter.frequency.value=800; filter.Q.value=2;
+      // wing beat modulation
+      const lfo=c.createOscillator(), lfoG=c.createGain();
+      lfo.frequency.value=28; lfoG.gain.value=60;
+      lfo.connect(lfoG); lfoG.connect(o.frequency);
+      o.connect(filter); filter.connect(g); g.connect(c.destination);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.25, t+0.08);
+      g.gain.setValueAtTime(0.25, t+0.7);
+      g.gain.linearRampToValueAtTime(0, t+0.85);
+      lfo.start(t); lfo.stop(t+0.9);
+      o.start(t); o.stop(t+0.9);
+    }
+  },
+  // --- CAT: meeow with vibrato ---
+  {
+    name:"Cat", icon:"🐱", bg:"#ffc1cc", tc:"#7a3040",
+    play() {
+      const c=C(), t=c.currentTime;
+      const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+      o.type='triangle'; filter.type='lowpass'; filter.frequency.value=2000;
+      addVibrato(o, c, 5, 20, t+0.15);
+      o.connect(filter); filter.connect(g); g.connect(c.destination);
+      // mee-OW shape
+      o.frequency.setValueAtTime(500, t);
+      o.frequency.linearRampToValueAtTime(750, t+0.12);
+      o.frequency.linearRampToValueAtTime(680, t+0.25);
+      o.frequency.linearRampToValueAtTime(900, t+0.35);
+      o.frequency.linearRampToValueAtTime(600, t+0.65);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.4, t+0.06);
+      g.gain.setValueAtTime(0.4, t+0.55);
+      g.gain.linearRampToValueAtTime(0, t+0.75);
+      o.start(t); o.stop(t+0.8);
+    }
+  },
+  // --- DUCK: nasal quack quack ---
+  {
+    name:"Duck", icon:"🦆", bg:"#a8e6cf", tc:"#1a5c40",
+    play() {
+      const c=C(), t=c.currentTime;
+      for (let i=0; i<2; i++) {
+        const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+        o.type='sawtooth'; filter.type='bandpass'; filter.frequency.value=1200; filter.Q.value=4;
+        o.connect(filter); filter.connect(g); g.connect(c.destination);
+        o.frequency.setValueAtTime(380, t+i*0.4);
+        o.frequency.linearRampToValueAtTime(300, t+i*0.4+0.08);
+        o.frequency.linearRampToValueAtTime(350, t+i*0.4+0.18);
+        g.gain.setValueAtTime(0, t+i*0.4);
+        g.gain.linearRampToValueAtTime(0.4, t+i*0.4+0.02);
+        g.gain.linearRampToValueAtTime(0.35, t+i*0.4+0.16);
+        g.gain.linearRampToValueAtTime(0, t+i*0.4+0.22);
+        o.start(t+i*0.4); o.stop(t+i*0.4+0.25);
+      }
+    }
+  },
+  // --- DOG: woof woof with breathiness ---
+  {
+    name:"Dog", icon:"🐶", bg:"#f4d9b0", tc:"#7a4000",
+    play() {
+      const c=C(), t=c.currentTime;
+      for (let i=0; i<2; i++) {
+        // tonal part
+        const o=c.createOscillator(), og=c.createGain();
+        o.type='sawtooth'; o.connect(og); og.connect(c.destination);
+        o.frequency.setValueAtTime(280, t+i*0.42);
+        o.frequency.linearRampToValueAtTime(200, t+i*0.42+0.12);
+        og.gain.setValueAtTime(0, t+i*0.42);
+        og.gain.linearRampToValueAtTime(0.35, t+i*0.42+0.02);
+        og.gain.linearRampToValueAtTime(0, t+i*0.42+0.18);
+        o.start(t+i*0.42); o.stop(t+i*0.42+0.2);
+        // noise breath
+        const n=makeNoise(c, 0.15), ng=c.createGain(), nf=c.createBiquadFilter();
+        nf.type='bandpass'; nf.frequency.value=600; nf.Q.value=1.5;
+        n.connect(nf); nf.connect(ng); ng.connect(c.destination);
+        ng.gain.setValueAtTime(0.1, t+i*0.42);
+        ng.gain.linearRampToValueAtTime(0, t+i*0.42+0.15);
+        n.start(t+i*0.42); n.stop(t+i*0.42+0.16);
+      }
+    }
+  },
+  // --- LION: deep guttural roar ---
+  {
+    name:"Lion", icon:"🦁", bg:"#f9c784", tc:"#7a3800",
+    play() {
+      const c=C(), t=c.currentTime;
+      // low rumble base
+      const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+      o.type='sawtooth'; filter.type='lowpass'; filter.frequency.value=400;
+      o.connect(filter); filter.connect(g); g.connect(c.destination);
+      o.frequency.setValueAtTime(55, t);
+      o.frequency.linearRampToValueAtTime(90, t+0.15);
+      o.frequency.linearRampToValueAtTime(70, t+0.5);
+      o.frequency.linearRampToValueAtTime(45, t+0.9);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.6, t+0.12);
+      g.gain.setValueAtTime(0.6, t+0.55);
+      g.gain.linearRampToValueAtTime(0, t+1.0);
+      // noise growl layer
+      const n=makeNoise(c, 1.0), ng=c.createGain(), nf=c.createBiquadFilter();
+      nf.type='lowpass'; nf.frequency.value=300;
+      n.connect(nf); nf.connect(ng); ng.connect(c.destination);
+      ng.gain.setValueAtTime(0, t);
+      ng.gain.linearRampToValueAtTime(0.2, t+0.1);
+      ng.gain.setValueAtTime(0.2, t+0.6);
+      ng.gain.linearRampToValueAtTime(0, t+1.0);
+      o.start(t); o.stop(t+1.05);
+      n.start(t); n.stop(t+1.05);
+    }
+  },
+  // --- COW: moooo with nasal resonance ---
+  {
+    name:"Cow", icon:"🐮", bg:"#d4eac8", tc:"#2e5c1a",
+    play() {
+      const c=C(), t=c.currentTime;
+      const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+      o.type='sawtooth'; filter.type='lowpass'; filter.frequency.value=600;
+      addVibrato(o, c, 4, 8, t+0.1);
+      o.connect(filter); filter.connect(g); g.connect(c.destination);
+      o.frequency.setValueAtTime(100, t);
+      o.frequency.linearRampToValueAtTime(130, t+0.1);
+      o.frequency.linearRampToValueAtTime(120, t+0.6);
+      o.frequency.linearRampToValueAtTime(95, t+1.0);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.45, t+0.08);
+      g.gain.setValueAtTime(0.45, t+0.8);
+      g.gain.linearRampToValueAtTime(0, t+1.1);
+      o.start(t); o.stop(t+1.15);
+    }
+  },
+  // --- ELEPHANT: loud trumpet blast ---
+  {
+    name:"Elephant", icon:"🐘", bg:"#cfc8e8", tc:"#3c2f7a",
+    play() {
+      const c=C(), t=c.currentTime;
+      const o=c.createOscillator(), g=c.createGain(), filter=c.createBiquadFilter();
+      o.type='sawtooth'; filter.type='highpass'; filter.frequency.value=200;
+      o.connect(filter); filter.connect(g); g.connect(c.destination);
+      // trumpet: rapid rise then fall
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.linearRampToValueAtTime(900, t+0.12);
+      o.frequency.linearRampToValueAtTime(700, t+0.25);
+      o.frequency.linearRampToValueAtTime(500, t+0.55);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.5, t+0.04);
+      g.gain.setValueAtTime(0.5, t+0.4);
+      g.gain.linearRampToValueAtTime(0, t+0.65);
+      // noise breath attack
+      const n=makeNoise(c, 0.12), ng=c.createGain(), nf=c.createBiquadFilter();
+      nf.type='bandpass'; nf.frequency.value=1000; nf.Q.value=1;
+      n.connect(nf); nf.connect(ng); ng.connect(c.destination);
+      ng.gain.setValueAtTime(0.15, t); ng.gain.linearRampToValueAtTime(0, t+0.12);
+      o.start(t); o.stop(t+0.7);
+      n.start(t); n.stop(t+0.13);
+    }
+  },
+  // --- EAGLE: piercing descending screech ---
+  {
+    name:"Eagle", icon:"🦅", bg:"#b8d8f8", tc:"#0c3d6e",
+    play() {
+      const c=C(), t=c.currentTime;
+      // main screech
+      const o=c.createOscillator(), g=c.createGain();
+      o.type='sawtooth'; o.connect(g); g.connect(c.destination);
+      o.frequency.setValueAtTime(2400, t);
+      o.frequency.linearRampToValueAtTime(1600, t+0.18);
+      o.frequency.linearRampToValueAtTime(1200, t+0.38);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.3, t+0.02);
+      g.gain.setValueAtTime(0.3, t+0.3);
+      g.gain.linearRampToValueAtTime(0, t+0.45);
+      // second call
+      const o2=c.createOscillator(), g2=c.createGain();
+      o2.type='sawtooth'; o2.connect(g2); g2.connect(c.destination);
+      o2.frequency.setValueAtTime(2200, t+0.55);
+      o2.frequency.linearRampToValueAtTime(1400, t+0.75);
+      g2.gain.setValueAtTime(0, t+0.55);
+      g2.gain.linearRampToValueAtTime(0.25, t+0.57);
+      g2.gain.linearRampToValueAtTime(0, t+0.82);
+      o.start(t); o.stop(t+0.5);
+      o2.start(t+0.55); o2.stop(t+0.85);
+    }
+  }
+];
+
+const TOTAL=10;
+let round=0, stars=0, current=-1, busy=false, activeAnimals=[];
+
+function pickAnimals() {
+  return [...ALL_ANIMALS].sort(()=>Math.random()-0.5).slice(0,4);
+}
+
+function renderPads(animals) {
+  const el=document.getElementById('pads'); el.innerHTML='';
+  animals.forEach((a,i)=>{
+    const btn=document.createElement('button');
+    btn.className='pad'; btn.id='pad-'+i;
+    btn.style.background=a.bg; btn.disabled=true;
+    btn.innerHTML=`<span class="icon">${a.icon}</span><span class="name" style="color:${a.tc}">${a.name}</span>`;
+    btn.onclick=()=>guess(i);
+    el.appendChild(btn);
+  });
+}
+
+function setPads(on) {
+  for(let i=0;i<4;i++){const p=document.getElementById('pad-'+i);if(p)p.disabled=!on;}
+}
+
+// Flash only used for FEEDBACK after guessing — NOT during sound playback
+function flashPad(idx, color) {
+  const p=document.getElementById('pad-'+idx); if(!p)return;
+  const orig=p.style.background;
+  if(color) p.style.background=color;
+  p.classList.add('lit');
+  setTimeout(()=>{p.classList.remove('lit'); if(color) p.style.background=orig;}, 400);
+}
+
+function setMsg(t){document.getElementById('message').textContent=t;}
+
+// Play sound with visual pulse on a SPEAKER icon, not the answer pad
+function playSound(idx) {
+  activeAnimals[idx].play();
+}
+
+function startGame() {
+  round=0; stars=0;
+  document.getElementById('stars').textContent='0';
+  document.getElementById('start-btn').style.display='none';
+  document.getElementById('replay-btn').style.display='none';
+  nextRound();
+}
+
+function nextRound() {
+  if(round>=TOTAL){endGame();return;}
+  busy=false;
+  activeAnimals=pickAnimals();
+  current=Math.floor(Math.random()*4);
+  renderPads(activeAnimals);
+  document.getElementById('round-disp').textContent=(round+1)+'/'+TOTAL;
+
+  // Show listening message — NO pad flash
+  setMsg('🔊 Listen carefully...');
+  setTimeout(()=>{
+    playSound(current); // just play sound, no visual hint
+    setTimeout(()=>{
+      setMsg('👆 Which animal?');
+      setPads(true);
+    }, 1000);
+  }, 600);
+}
+
+function guess(idx) {
+  if(busy)return;
+  busy=true; setPads(false);
+  if(idx===current) {
+    stars++;
+    document.getElementById('stars').textContent=stars;
+    flashPad(idx, '#b6f5b0'); // green flash on correct
+    setMsg('🌟 Yes! Great job!');
+  } else {
+    flashPad(idx, '#ffb3b3'); // red flash on wrong
+    setTimeout(()=>{
+      // reveal correct with green + replay sound
+      flashPad(current, '#b6f5b0');
+      playSound(current);
+    }, 400);
+    setMsg('💙 Almost! The answer was...');
+  }
+  round++;
+  setTimeout(()=>nextRound(), idx===current ? 1400 : 2200);
+}
+
+function endGame() {
+  setPads(false);
+  const msgs=['🎉 Amazing!','🌈 Superstar!','🏆 Wonderful!','🥳 You rock!'];
+  setMsg(msgs[Math.floor(Math.random()*msgs.length)]+' '+stars+'/'+TOTAL+' stars!');
+  document.getElementById('replay-btn').style.display='inline-block';
+}
+
+// PWA
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); deferredPrompt=e;
+  document.getElementById('install-banner').style.display='block';
+});
+document.getElementById('install-btn').addEventListener('click',async()=>{
+  if(!deferredPrompt)return;
+  deferredPrompt.prompt();
+  const{outcome}=await deferredPrompt.userChoice;
+  if(outcome==='accepted')document.getElementById('install-banner').style.display='none';
+  deferredPrompt=null;
+});
+
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.navigator.standalone;
+if(isIOS)document.getElementById('ios-hint').style.display='block';
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
